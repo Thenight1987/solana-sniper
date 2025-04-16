@@ -11,9 +11,6 @@ from solana.rpc.api import Client
 from solana.rpc.commitment import Commitment
 import threading
 
-# For Telegram integration
-from telethon import TelegramClient, events, errors
-
 # Custom methods (make sure these are in place)
 from amm_selection import select_amm2trade
 from webhook import sendWebhook
@@ -48,55 +45,25 @@ def logging_info(token_address, author, channel_id, message_received):
                                    f"Username: {author}\nChannel: {channel_id}\nMessage: {message_received}\n"
                                    f"Pair Address: https://birdeye.so/token/{token_address}?chain=solana")
 
-# Main Telegram listener function
-def Telegram():
-    # Set your Telegram credentials
-    session_name = "solana_sniper_session"  # Make sure your session name is correct
-    api_id = 123456  # Replace with your actual API ID from Telegram
-    api_hash = "your_telegram_api_hash"  # Replace with your actual API Hash
+# Main function to monitor token drops
+def monitor_token_drops():
+    # Load previous tokens
+    file_path = os.path.join(sys.path[0], 'data', 'previousSELLBUYINFO.json')
+    with open(file_path, 'r') as file:
+        data = json.load(file)
 
-    with TelegramClient(session_name, api_id, api_hash) as client:
-        @client.on(events.NewMessage(incoming=True))
-        async def handler(event):
-            print_message("Message Received")
-            channel_check = event.is_channel
-            if channel_check:
-                sender_username = event.message._sender.username
-                # Make sure you are monitoring the correct users
-                sender_usernames = ['user1', 'user2']  # Add the usernames you want to monitor
-                for user in sender_usernames:
-                    if user == sender_username:
-                        message_received = event.message.message
-                        if message_received:
-                            channel_id = event.chat_id
-                            sender_id = event.message.sender_id
-                            token_address = None
-                            # Check for different token patterns in the message
-                            birdeye_pattern = r'https?://birdeye\.so/token/(\w+)\?chain=solana'
-                            dex_pattern = r'https://dexscreener\.com/solana/(\w+)'
+    if len(data) > 0:
+        for token in data:
+            # Call select_amm2trade token method.
+            Thread(target=select_amm2trade, name=token, args=(token, payer, ctx)).start()
 
-                            birdeye_url = re.search(birdeye_pattern, message_received)
-                            dex_url = re.search(dex_pattern, message_received)
-                            if birdeye_url:
-                                token_address = birdeye_url.group(1)
-                            elif dex_url:
-                                token_address = dex_url.group(1)
-
-                            if token_address:
-                                logging_info(token_address, sender_username, channel_id, message_received)
-                                # Call the trade function in a new thread
-                                Thread(target=select_amm2trade, name=token_address, args=(token_address, payer, ctx)).start()
-
-        # Run the client
-        client.run_until_disconnected()
-
-# Run the Telegram listener
-if __name__ == "__main__":
+def main():
+    # Run the bot
     try:
-        Telegram()
-    except errors.FloodWaitError as e:
-        print(f'Have to sleep {e.seconds} seconds')
-        time.sleep(e.seconds)
+        monitor_token_drops()
     except Exception as e:
-        logging.error(f"Exception in Telegram Client: {e}")
-        print("Exception in Telegram Client:", e)
+        logging.error(f"Error occurred: {e}")
+        print("Error occurred:", e)
+
+if __name__ == "__main__":
+    main()
